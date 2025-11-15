@@ -107,8 +107,8 @@
                         <div class="col-md-2 mb-3">
                             <div class="card text-white bg-secondary financial-card h-100">
                                 <div class="card-body text-center">
-                                    <h6>هزینه ارسال شده</h6>
-                                    <h4 id="totalCostSent">0</h4>
+                                    <h6>فاکتور نزد فروشنده</h6>
+                                    <h4 id="totalVendorInvoice">0</h4>
                                 </div>
                             </div>
                         </div>
@@ -136,6 +136,7 @@
                                     <th>هزینه دریافتی</th>
                                     <th>هزینه ارسال شده</th>
                                     <th>هزینه واخواهی شده</th>
+                                    <th>فاکتور نزد فروشنده</th>
                                     <th>عملیات</th>
                                 </tr>
                             </thead>
@@ -149,7 +150,7 @@
         </div>
     </div>
 
-    <!-- مودال‌ها (همانند قبل) -->
+    <!-- مودال‌ها (همانند قبل بدون تغییر) -->
     <!-- مودال افزودن دفتر -->
     <div class="modal fade" id="addLedgerModal" tabindex="-1">
         <div class="modal-dialog">
@@ -237,6 +238,58 @@
         </div>
     </div>
 
+    <!-- مودال ویرایش سال مالی -->
+    <div class="modal fade" id="editFiscalYearModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">ویرایش سال مالی</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editFiscalYearForm">
+                        <input type="hidden" id="editFiscalYearId">
+                        <div class="mb-3">
+                            <label for="editFiscalYearTitle" class="form-label">عنوان سال مالی *</label>
+                            <input type="text" class="form-control" id="editFiscalYearTitle" 
+                                   placeholder="مثال: ۱۴۰۳-۱۴۰۴" required>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="editStartDate" class="form-label">تاریخ شروع *</label>
+                                    <input type="text" class="form-control persian-datepicker" id="editStartDate" 
+                                           placeholder="انتخاب تاریخ شروع" required readonly>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label for="editEndDate" class="form-label">تاریخ پایان *</label>
+                                    <input type="text" class="form-control persian-datepicker" id="editEndDate" 
+                                           placeholder="انتخاب تاریخ پایان" required readonly>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input type="checkbox" class="form-check-input" id="editIsActive">
+                            <label class="form-check-label" for="editIsActive">سال مالی فعال</label>
+                        </div>
+                        <div class="alert alert-warning">
+                            <small>
+                                <i class="bi bi-exclamation-triangle"></i>
+                                در صورت تغییر بازه زمانی، تمام تراکنش‌ها باید در بازه جدید قرار گیرند
+                            </small>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                    <button type="button" class="btn btn-primary" onclick="updateFiscalYear()">بروزرسانی سال مالی</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- مودال مدیریت سال‌های مالی -->
     <div class="modal fade" id="manageFiscalYearsModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
@@ -286,7 +339,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addTransactionForm">
+                    <form id="addTransactionForm" enctype="multipart/form-data">
                         <input type="hidden" id="transactionFiscalYearId">
                         <div class="row">
                             <div class="col-md-6">
@@ -324,6 +377,12 @@
                             <label for="transactionDescription" class="form-label">توضیحات</label>
                             <textarea class="form-control" id="transactionDescription" rows="3"></textarea>
                         </div>
+                        <div class="mb-3">
+                            <label for="transactionAttachment" class="form-label">ضمیمه (اختیاری)</label>
+                            <input type="file" class="form-control" id="transactionAttachment" 
+                                   accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx">
+                            <small class="text-muted">فرمت‌های مجاز: JPG, PNG, GIF, PDF, DOC, DOCX (حداکثر 10MB)</small>
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -343,7 +402,7 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="editTransactionForm">
+                    <form id="editTransactionForm" enctype="multipart/form-data">
                         <input type="hidden" id="editTransactionId">
                         <div class="row">
                             <div class="col-md-6">
@@ -380,6 +439,15 @@
                         <div class="mb-3">
                             <label for="editTransactionDescription" class="form-label">توضیحات</label>
                             <textarea class="form-control" id="editTransactionDescription" rows="3"></textarea>
+                        </div>
+                        <div class="mb-3">
+                            <label for="editTransactionAttachment" class="form-label">ضمیمه جدید (اختیاری)</label>
+                            <input type="file" class="form-control" id="editTransactionAttachment" 
+                                   accept=".jpg,.jpeg,.png,.gif,.pdf,.doc,.docx">
+                            <small class="text-muted">فرمت‌های مجاز: JPG, PNG, GIF, PDF, DOC, DOCX (حداکثر 10MB)</small>
+                        </div>
+                        <div id="editAttachmentInfo">
+                            <!-- اطلاعات ضمیمه موجود در اینجا نمایش داده می‌شود -->
                         </div>
                     </form>
                 </div>

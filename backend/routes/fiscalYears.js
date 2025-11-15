@@ -136,10 +136,13 @@ router.put('/:id/set-active', async (req, res) => {
     }
 });
 
-// حذف سال مالی
-router.delete('/:id', async (req, res) => {
+// ویرایش سال مالی
+router.put('/:id', async (req, res) => {
     try {
         const { id } = req.params;
+        const { year, start_date, end_date, is_active } = req.body;
+        
+        console.log('ویرایش سال مالی:', { id, year, start_date, end_date });
         
         // بررسی وجود سال مالی
         const [fiscalYears] = await db.execute(
@@ -148,7 +151,124 @@ router.delete('/:id', async (req, res) => {
         );
         
         if (fiscalYears.length === 0) {
-            return res.status(404).json({ error: 'سال مالی پیدا نشد' });
+            return res.status(404).json({ 
+                success: false,
+                error: 'سال مالی پیدا نشد' 
+            });
+        }
+        
+        const currentFiscalYear = fiscalYears[0];
+        
+        // بررسی تاریخ‌ها
+        if (start_date && end_date) {
+            if (start_date >= end_date) {
+                return res.status(400).json({ 
+                    success: false,
+                    error: 'تاریخ شروع باید قبل از تاریخ پایان باشد' 
+                });
+            }
+        }
+        
+        // بررسی تراکنش‌های خارج از بازه جدید
+        if (start_date || end_date) {
+            const newStartDate = start_date || currentFiscalYear.start_date;
+            const newEndDate = end_date || currentFiscalYear.end_date;
+            
+            const [outOfRangeTransactions] = await db.execute(
+                `SELECT id, transaction_date 
+                 FROM transactions 
+                 WHERE fiscal_year_id = ? 
+                 AND (transaction_date < ? OR transaction_date > ?)`,
+                [id, newStartDate, newEndDate]
+            );
+            
+            if (outOfRangeTransactions.length > 0) {
+                const transactionDates = outOfRangeTransactions.map(t => t.transaction_date);
+                return res.status(400).json({
+                    success: false,
+                    error: `امکان تغییر بازه زمانی وجود ندارد زیرا ${outOfRangeTransactions.length} تراکنش در خارج از بازه جدید قرار دارند. تاریخ‌های تراکنش: ${transactionDates.join(', ')}`
+                });
+            }
+        }
+        
+        // آماده کردن فیلدها برای بروزرسانی
+        const updateFields = [];
+        const updateValues = [];
+        
+        if (year) {
+            updateFields.push('year = ?');
+            updateValues.push(year);
+        }
+        
+        if (start_date) {
+            updateFields.push('start_date = ?');
+            updateValues.push(start_date);
+        }
+        
+        if (end_date) {
+            updateFields.push('end_date = ?');
+            updateValues.push(end_date);
+        }
+        
+        if (is_active !== undefined) {
+            updateFields.push('is_active = ?');
+            updateValues.push(is_active);
+            
+            // اگر سال مالی فعال می‌شود، بقیه سال‌های مالی همین دفتر را غیرفعال کن
+            if (is_active) {
+                await db.execute(
+                    'UPDATE fiscal_years SET is_active = false WHERE ledger_id = ? AND id != ?',
+                    [currentFiscalYear.ledger_id, id]
+                );
+            }
+        }
+        
+        if (updateFields.length === 0) {
+            return res.status(400).json({ 
+                success: false,
+                error: 'هیچ فیلدی برای بروزرسانی ارسال نشده است' 
+            });
+        }
+        
+        updateValues.push(id);
+        
+        const query = `UPDATE fiscal_years SET ${updateFields.join(', ')} WHERE id = ?`;
+        
+        await db.execute(query, updateValues);
+        
+        console.log('✅ سال مالی با موفقیت ویرایش شد:', id);
+        
+        res.json({ 
+            success: true,
+            message: 'سال مالی با موفقیت ویرایش شد'
+        });
+    } catch (error) {
+        console.error('❌ Error updating fiscal year:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'خطا در ویرایش سال مالی: ' + error.message 
+        });
+    }
+});
+
+// حذف سال مالی
+router.delete('/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        console.log('حذف سال مالی:', id);
+        
+        // بررسی وجود سال مالی
+        const [fiscalYears] = await db.execute(
+            'SELECT * FROM fiscal_years WHERE id = ?',
+            [id]
+        );
+        
+        if (fiscalYears.length === 0) {
+            return res.status(404).json({ 
+                success: false,
+                error: 'سال مالی پیدا نشد' 
+            });
         }
         
         // بررسی وجود تراکنش‌های مرتبط
@@ -159,19 +279,25 @@ router.delete('/:id', async (req, res) => {
         
         if (transactions.length > 0) {
             return res.status(400).json({ 
-                error: 'امکان حذف سال مالی وجود ندارد زیرا تراکنش‌هایی به آن مرتبط هستند' 
+                success: false,
+                error: `امکان حذف سال مالی وجود ندارد زیرا ${transactions.length} تراکنش به آن مرتبط هستند. لطفاً ابتدا تراکنش‌ها را حذف کنید.` 
             });
         }
         
         await db.execute('DELETE FROM fiscal_years WHERE id = ?', [id]);
+        
+        console.log('✅ سال مالی با موفقیت حذف شد:', id);
         
         res.json({ 
             success: true,
             message: 'سال مالی با موفقیت حذف شد'
         });
     } catch (error) {
-        console.error('Error deleting fiscal year:', error);
-        res.status(500).json({ error: 'خطا در حذف سال مالی' });
+        console.error('❌ Error deleting fiscal year:', error);
+        res.status(500).json({ 
+            success: false,
+            error: 'خطا در حذف سال مالی: ' + error.message 
+        });
     }
 });
 

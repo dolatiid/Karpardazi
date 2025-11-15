@@ -1,6 +1,13 @@
--- ایجاد دیتابیس
-CREATE DATABASE IF NOT EXISTS karpardazi_system CHARACTER SET utf8mb4 COLLATE utf8mb4_persian_ci;
+-- حذف دیتابیس اگر وجود دارد و ایجاد مجدد
+DROP DATABASE IF EXISTS karpardazi_system;
+CREATE DATABASE karpardazi_system CHARACTER SET utf8mb4 COLLATE utf8mb4_persian_ci;
 USE karpardazi_system;
+
+-- حذف جداول اگر وجود دارند (به ترتیب وابستگی)
+DROP TABLE IF EXISTS transactions;
+DROP TABLE IF EXISTS fiscal_years;
+DROP TABLE IF EXISTS ledgers;
+DROP TABLE IF EXISTS users;
 
 -- جدول کاربران
 CREATE TABLE users (
@@ -54,6 +61,7 @@ CREATE TABLE transactions (
     title VARCHAR(200) NOT NULL,
     amount DECIMAL(15,2) NOT NULL,
     description TEXT,
+    attachment_path VARCHAR(500), -- مسیر فایل ضمیمه
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (fiscal_year_id) REFERENCES fiscal_years(id) ON DELETE CASCADE
@@ -85,28 +93,25 @@ INSERT INTO fiscal_years (ledger_id, year, start_date, end_date, is_active) VALU
 (2, '1403-1404', '1403/01/01', '1404/01/01', true),
 (3, '1403-1404', '1403/01/01', '1404/01/01', true);
 
--- تراکنش‌های نمونه
+-- تراکنش‌های نمونه برای تست منطق جدید
 INSERT INTO transactions (fiscal_year_id, transaction_date, transaction_type, title, amount, description) VALUES 
--- سال مالی 1402-1403 دفتر مرکزی
-(1, '1402/02/15', 'دریافت وجه', 'دریافت وام از بانک', 5000000, 'دریافت وام کوتاه مدت'),
-(1, '1402/03/01', 'پرداخت وجه با فاکتور', 'خرید تجهیزات اداری', 2000000, 'خرید کامپیوتر و پرینتر'),
-(1, '1402/04/20', 'دریافت هزینه', 'دریافت حق الزحمه مشاوره', 3000000, 'حق الزحمه پروژه مشاوره'),
-
--- سال مالی 1403-1404 دفتر مرکزی
-(2, '1403/01/10', 'دریافت وجه', 'فروش محصولات', 4000000, 'فروش محصولات به مشتریان'),
-(2, '1403/02/05', 'پرداخت وجه بدون فاکتور', 'هزینه حمل و نقل', 500000, 'هزینه حمل مواد اولیه'),
-(2, '1403/03/15', 'ارسال هزینه', 'ارسال هزینه به دفتر فروش', 1500000, 'هزینه بازاریابی و فروش'),
-(2, '1403/04/01', 'واخواهی هزینه', 'بازگشت هزینه حمل', 200000, 'عودت هزینه حمل اضافی'),
+-- سال مالی 1403-1404 دفتر مرکزی - نمونه‌هایی برای تست منطق جدید
+(2, '1403/01/05', 'دریافت وجه', 'دریافت وام از بانک', 5000000, 'دریافت وام کوتاه مدت'),
+(2, '1403/01/10', 'پرداخت وجه با فاکتور', 'خرید تجهیزات اداری', 2000000, 'خرید کامپیوتر و پرینتر - با فاکتور'),
+(2, '1403/01/15', 'پرداخت وجه بدون فاکتور', 'هزینه حمل و نقل', 500000, 'هزینه حمل مواد اولیه - بدون فاکتور'),
+(2, '1403/01/20', 'دریافت هزینه', 'دریافت فاکتور خرید تجهیزات', 2000000, 'دریافت فاکتور خرید تجهیزات اداری'),
+(2, '1403/01/25', 'پرداخت وجه بدون فاکتور', 'خرید ملزومات', 300000, 'خرید ملزومات اداری - بدون فاکتور'),
+(2, '1403/02/01', 'دریافت هزینه', 'دریافت فاکتور خرید ملزومات', 300000, 'دریافت فاکتور خرید ملزومات اداری'),
 
 -- سال مالی 1403-1404 دفتر فروش
-(4, '1403/01/20', 'دریافت وجه', 'فروش مستقیم', 2500000, 'فروش مستقیم به مصرف کننده'),
-(4, '1403/02/10', 'پرداخت وجه با فاکتور', 'خرید مواد تبلیغاتی', 800000, 'چاپ بروشور و کاتالوگ'),
-(4, '1403/03/05', 'دریافت هزینه', 'دریافت هزینه بازاریابی', 1200000, 'هزینه allocated از دفتر مرکزی'),
+(4, '1403/01/10', 'دریافت وجه', 'فروش محصولات', 2500000, 'فروش مستقیم به مصرف کننده'),
+(4, '1403/01/15', 'پرداخت وجه با فاکتور', 'خرید مواد تبلیغاتی', 800000, 'چاپ بروشور و کاتالوگ - با فاکتور'),
+(4, '1403/01/20', 'پرداخت وجه بدون فاکتور', 'هزینه بازاریابی', 400000, 'هزینه بازاریابی - بدون فاکتور'),
 
 -- سال مالی 1403-1404 دفتر پروژه
-(5, '1403/01/15', 'دریافت وجه', 'پیش پرداخت پروژه', 6000000, 'پیش پرداخت پروژه ساختمانی'),
-(5, '1403/02/20', 'پرداخت وجه با فاکتور', 'خرید مصالح ساختمانی', 3500000, 'خرید سیمان و آجر'),
-(5, '1403/03/25', 'عودت مبلغ دریافتی', 'عودت پیش پرداخت', 1000000, 'کاهش scope پروژه');
+(5, '1403/01/10', 'دریافت وجه', 'پیش پرداخت پروژه', 6000000, 'پیش پرداخت پروژه ساختمانی'),
+(5, '1403/01/15', 'پرداخت وجه با فاکتور', 'خرید مصالح ساختمانی', 3500000, 'خرید سیمان و آجر - با فاکتور'),
+(5, '1403/01/20', 'پرداخت وجه بدون فاکتور', 'هزینه کارگری', 1000000, 'هزینه کارگری - بدون فاکتور');
 
 -- نمایش اطلاعات ایجاد شده
 SELECT '=== کاربران ===' as '';
@@ -119,7 +124,14 @@ SELECT '=== سال‌های مالی ===' as '';
 SELECT * FROM fiscal_years;
 
 SELECT '=== تراکنش‌ها ===' as '';
-SELECT * FROM transactions;
+SELECT 
+    t.*,
+    fy.year as fiscal_year,
+    l.title as ledger_title
+FROM transactions t
+JOIN fiscal_years fy ON t.fiscal_year_id = fy.id
+JOIN ledgers l ON fy.ledger_id = l.id
+ORDER BY t.transaction_date, t.id;
 
 -- نمایش خلاصه اطلاعات
 SELECT '=== خلاصه سیستم ===' as '';
@@ -138,3 +150,35 @@ UNION ALL
 SELECT 
     'تعداد تراکنش‌ها: ' AS '',
     (SELECT COUNT(*) FROM transactions) AS count;
+
+-- نمایش نمونه‌ای از محاسبات برای تست منطق جدید
+SELECT '=== تست منطق فاکتور نزد فروشنده ===' as '';
+SELECT 
+    'مانده اولیه فاکتور نزد فروشنده دفتر مرکزی: ' AS description,
+    (SELECT initial_vendor_invoice FROM ledgers WHERE id = 1) AS amount
+UNION ALL
+SELECT 
+    'جمع پرداخت‌های بدون فاکتور در دفتر مرکزی: ' AS description,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions t 
+     JOIN fiscal_years fy ON t.fiscal_year_id = fy.id 
+     WHERE fy.ledger_id = 1 AND t.transaction_type = 'پرداخت وجه بدون فاکتور') AS amount
+UNION ALL
+SELECT 
+    'جمع هزینه‌های دریافتی در دفتر مرکزی: ' AS description,
+    (SELECT COALESCE(SUM(amount), 0) FROM transactions t 
+     JOIN fiscal_years fy ON t.fiscal_year_id = fy.id 
+     WHERE fy.ledger_id = 1 AND t.transaction_type = 'دریافت هزینه') AS amount
+UNION ALL
+SELECT 
+    'فاکتور نزد فروشنده نهایی (محاسبه شده): ' AS description,
+    ((SELECT initial_vendor_invoice FROM ledgers WHERE id = 1) +
+     (SELECT COALESCE(SUM(amount), 0) FROM transactions t 
+      JOIN fiscal_years fy ON t.fiscal_year_id = fy.id 
+      WHERE fy.ledger_id = 1 AND t.transaction_type = 'پرداخت وجه بدون فاکتور') -
+     (SELECT COALESCE(SUM(amount), 0) FROM transactions t 
+      JOIN fiscal_years fy ON t.fiscal_year_id = fy.id 
+      WHERE fy.ledger_id = 1 AND t.transaction_type = 'دریافت هزینه')) AS amount;
+
+-- نمایش لاگ موفقیت آمیز بودن اجرا
+SELECT '=== وضعیت اجرا ===' as '';
+SELECT '✅ پایگاه داده با موفقیت ایجاد و با داده‌های نمونه پر شد' AS status;

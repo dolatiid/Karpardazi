@@ -73,6 +73,8 @@ function setDefaultPersianDates() {
         
         document.getElementById('startDate').value = todayFormatted;
         document.getElementById('endDate').value = nextYearFormatted;
+        document.getElementById('editStartDate').value = todayFormatted;
+        document.getElementById('editEndDate').value = nextYearFormatted;
         
     } catch (error) {
         console.error('Error setting default persian dates:', error);
@@ -87,6 +89,8 @@ function setFallbackDates() {
     document.getElementById('editTransactionDate').value = '1403/01/01';
     document.getElementById('startDate').value = '1403/01/01';
     document.getElementById('endDate').value = '1404/01/01';
+    document.getElementById('editStartDate').value = '1403/01/01';
+    document.getElementById('editEndDate').value = '1404/01/01';
 }
 
 // بررسی احراز هویت
@@ -148,21 +152,26 @@ function renderLedgersList(ledgers) {
     }
     
     ledgers.forEach(ledger => {
-        const button = document.createElement('button');
-        button.className = 'list-group-item list-group-item-action ledger-item';
-        
-        // استفاده از تاریخ میلادی به صورت ساده
-        const createdDate = new Date(ledger.created_at).toLocaleDateString('fa-IR');
-        
-        button.innerHTML = `
+        const ledgerItem = document.createElement('div');
+        ledgerItem.className = 'list-group-item ledger-item';
+        ledgerItem.innerHTML = `
             <div class="d-flex justify-content-between align-items-start">
-                <strong>${ledger.title}</strong>
-                <small class="text-muted">${createdDate}</small>
+                <div class="flex-grow-1">
+                    <strong>${ledger.title}</strong>
+                    <br>
+                    <small class="text-muted">مانده: ${parseFloat(ledger.initial_debt).toLocaleString()} ریال</small>
+                </div>
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-danger btn-sm" onclick="deleteLedger(${ledger.id}, event)">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </div>
             </div>
-            <small class="text-muted">مانده: ${parseFloat(ledger.initial_debt).toLocaleString()} ریال</small>
         `;
-        button.onclick = () => selectLedger(ledger);
-        ledgersList.appendChild(button);
+        
+        // اضافه کردن event listener برای انتخاب دفتر
+        ledgerItem.querySelector('.flex-grow-1').addEventListener('click', () => selectLedger(ledger));
+        ledgersList.appendChild(ledgerItem);
     });
 }
 
@@ -175,7 +184,7 @@ async function selectLedger(ledger) {
     document.querySelectorAll('.ledger-item').forEach(item => {
         item.classList.remove('active');
     });
-    event.currentTarget.classList.add('active');
+    event.currentTarget.closest('.ledger-item').classList.add('active');
     
     document.getElementById('currentLedgerTitle').textContent = ledger.title;
     document.getElementById('noLedgerSelected').style.display = 'none';
@@ -183,6 +192,46 @@ async function selectLedger(ledger) {
     
     // بارگذاری سال‌های مالی
     await loadFiscalYears(ledger.id);
+}
+
+// حذف دفتر
+async function deleteLedger(ledgerId, event) {
+    event.stopPropagation(); // جلوگیری از انتخاب دفتر
+    
+    if (!confirm('آیا از حذف این دفتر اطمینان دارید؟ این عمل غیرقابل بازگشت است.')) {
+        return;
+    }
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/ledgers/${ledgerId}`, {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('دفتر با موفقیت حذف شد');
+            // بارگذاری مجدد لیست دفاتر
+            await loadLedgers();
+            
+            // اگر دفتر جاری حذف شده، محتوای دفتر را پنهان کن
+            if (currentLedgerId === ledgerId) {
+                currentLedgerId = null;
+                currentLedgerData = null;
+                document.getElementById('noLedgerSelected').style.display = 'block';
+                document.getElementById('ledgerContent').style.display = 'none';
+            }
+        } else {
+            alert('خطا: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error deleting ledger:', error);
+        alert('خطا در حذف دفتر');
+    }
 }
 
 // بارگذاری سال‌های مالی
@@ -528,7 +577,79 @@ async function setActiveFiscalYear(fiscalYearId) {
 
 // ویرایش سال مالی
 async function editFiscalYear(fiscalYearId) {
-    alert('ویرایش سال مالی در نسخه بعدی پیاده‌سازی می‌شود');
+    try {
+        // دریافت اطلاعات سال مالی
+        const response = await fetch(`/api/fiscal-years/${fiscalYearId}`);
+        const fiscalYear = await response.json();
+        
+        if (!fiscalYear) {
+            alert('سال مالی پیدا نشد');
+            return;
+        }
+        
+        // پر کردن فرم ویرایش
+        document.getElementById('editFiscalYearId').value = fiscalYear.id;
+        document.getElementById('editFiscalYearTitle').value = fiscalYear.year;
+        document.getElementById('editStartDate').value = fiscalYear.start_date;
+        document.getElementById('editEndDate').value = fiscalYear.end_date;
+        document.getElementById('editIsActive').checked = fiscalYear.is_active;
+        
+        // نمایش مودال ویرایش
+        const modalElement = document.getElementById('editFiscalYearModal');
+        const modal = new bootstrap.Modal(modalElement);
+        modal.show();
+        
+    } catch (error) {
+        console.error('Error loading fiscal year for edit:', error);
+        alert('خطا در بارگذاری اطلاعات سال مالی');
+    }
+}
+
+// بروزرسانی سال مالی
+async function updateFiscalYear() {
+    const form = document.getElementById('editFiscalYearForm');
+    if (!form.checkValidity()) {
+        form.reportValidity();
+        return;
+    }
+    
+    const fiscalYearData = {
+        year: document.getElementById('editFiscalYearTitle').value,
+        start_date: document.getElementById('editStartDate').value,
+        end_date: document.getElementById('editEndDate').value,
+        is_active: document.getElementById('editIsActive').checked
+    };
+    
+    const fiscalYearId = document.getElementById('editFiscalYearId').value;
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/fiscal-years/${fiscalYearId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(fiscalYearData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('سال مالی با موفقیت ویرایش شد');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editFiscalYearModal'));
+            modal.hide();
+            
+            // بارگذاری مجدد سال‌های مالی
+            await loadFiscalYears(currentLedgerId);
+            await loadFiscalYearsForManagement();
+        } else {
+            alert('خطا: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error updating fiscal year:', error);
+        alert('خطا در ویرایش سال مالی');
+    }
 }
 
 // حذف سال مالی
@@ -588,26 +709,37 @@ async function createTransaction() {
         return;
     }
     
-    const transactionData = {
+    const formData = new FormData();
+    formData.append('fiscal_year_id', document.getElementById('transactionFiscalYearId').value);
+    formData.append('transaction_date', document.getElementById('transactionDate').value);
+    formData.append('transaction_type', document.getElementById('transactionType').value);
+    formData.append('title', document.getElementById('transactionTitle').value);
+    formData.append('amount', document.getElementById('transactionAmount').value);
+    formData.append('description', document.getElementById('transactionDescription').value);
+    
+    // اضافه کردن فایل ضمیمه اگر وجود دارد
+    const attachmentFile = document.getElementById('transactionAttachment').files[0];
+    if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
+    }
+    
+    console.log('📤 ارسال داده‌های تراکنش:', {
         fiscal_year_id: document.getElementById('transactionFiscalYearId').value,
-        transaction_date: document.getElementById('transactionDate').value, // تاریخ شمسی
+        transaction_date: document.getElementById('transactionDate').value,
         transaction_type: document.getElementById('transactionType').value,
         title: document.getElementById('transactionTitle').value,
-        amount: document.getElementById('transactionAmount').value,
-        description: document.getElementById('transactionDescription').value
-    };
-    
-    console.log('📤 ارسال داده‌های تراکنش:', transactionData);
+        amount: document.getElementById('transactionAmount').value
+    });
     
     try {
         const token = localStorage.getItem('token');
         const response = await fetch('/api/transactions', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
+                //注意:不要设置Content-Type，让浏览器自动设置multipart/form-data
             },
-            body: JSON.stringify(transactionData)
+            body: formData
         });
         
         console.log('📥 وضعیت پاسخ:', response.status);
@@ -669,6 +801,7 @@ function renderTransactionsTable(transactions) {
     transactions.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
     
     let runningBalance = 0;
+    let runningVendorInvoice = 0;
     let hasAddedInitialBalance = false;
     
     // اگر این کوچکترین سال مالی است و اطلاعات دفتر وجود دارد، مانده اولیه اضافه کن
@@ -676,12 +809,13 @@ function renderTransactionsTable(transactions) {
         const initialBalanceRow = document.createElement('tr');
         initialBalanceRow.className = 'initial-balance-row';
         
-        // مانده اولیه نقدی
+        // مقادیر اولیه از دفتر
         const initialCash = parseFloat(currentLedgerData.initial_cash) || 0;
-        // هزینه ارسال نشده اولیه
         const initialPendingCost = parseFloat(currentLedgerData.initial_pending_cost) || 0;
+        const initialVendorInvoice = parseFloat(currentLedgerData.initial_vendor_invoice) || 0;
         
         runningBalance += initialCash;
+        runningVendorInvoice = initialVendorInvoice;
         
         initialBalanceRow.innerHTML = `
             <td>${getFiscalYearStartDate()}</td>
@@ -693,6 +827,7 @@ function renderTransactionsTable(transactions) {
             <td><strong>${initialPendingCost.toLocaleString()}</strong></td>
             <td></td>
             <td></td>
+            <td><strong>${initialVendorInvoice.toLocaleString()}</strong></td>
             <td></td>
         `;
         tbody.appendChild(initialBalanceRow);
@@ -704,8 +839,15 @@ function renderTransactionsTable(transactions) {
         const row = document.createElement('tr');
         
         // محاسبه مقادیر برای هر ستون بر اساس نوع تراکنش
-        const amounts = calculateTransactionAmounts(transaction, runningBalance);
+        const amounts = calculateTransactionAmounts(transaction, runningBalance, runningVendorInvoice);
         runningBalance = amounts.balance;
+        runningVendorInvoice = amounts.vendor_invoice;
+        
+        // ایجاد دکمه دانلود ضمیمه اگر وجود دارد
+        const attachmentButton = transaction.attachment_path ? 
+            `<button class="btn btn-sm btn-outline-info" onclick="downloadAttachment(${transaction.id})" title="دانلود ضمیمه">
+                <i class="bi bi-paperclip"></i>
+            </button>` : '';
         
         row.innerHTML = `
             <td>${transaction.transaction_date}</td>
@@ -717,7 +859,9 @@ function renderTransactionsTable(transactions) {
             <td>${amounts.cost_received ? amounts.cost_received.toLocaleString() : ''}</td>
             <td>${amounts.cost_sent ? amounts.cost_sent.toLocaleString() : ''}</td>
             <td>${amounts.cost_recalled ? amounts.cost_recalled.toLocaleString() : ''}</td>
+            <td>${amounts.vendor_invoice.toLocaleString()}</td>
             <td>
+                ${attachmentButton}
                 <button class="btn btn-sm btn-warning" onclick="editTransaction(${transaction.id})">
                     <i class="bi bi-pencil"></i>
                 </button>
@@ -729,6 +873,96 @@ function renderTransactionsTable(transactions) {
         
         tbody.appendChild(row);
     });
+}
+
+// محاسبه مقادیر مالی بر اساس نوع تراکنش
+function calculateTransactionAmounts(transaction, currentBalance, currentVendorInvoice) {
+    const amounts = {
+        received: 0,
+        paid: 0,
+        balance: currentBalance,
+        cost_received: 0,
+        cost_sent: 0,
+        cost_recalled: 0,
+        vendor_invoice: currentVendorInvoice
+    };
+    
+    const amount = parseFloat(transaction.amount);
+    
+    switch(transaction.transaction_type) {
+        case 'دریافت وجه':
+            amounts.received = amount;
+            amounts.balance += amount;
+            break;
+            
+        case 'پرداخت وجه بدون فاکتور':
+            amounts.paid = amount;
+            amounts.balance -= amount;
+            amounts.vendor_invoice += amount; // افزایش فاکتور نزد فروشنده
+            break;
+            
+        case 'پرداخت وجه با فاکتور':
+            amounts.paid = amount;
+            amounts.balance -= amount;
+            amounts.cost_received = amount; // دریافت هزینه
+            break;
+            
+        case 'دریافت هزینه':
+            amounts.cost_received = amount;
+            amounts.vendor_invoice -= amount; // کاهش فاکتور نزد فروشنده
+            break;
+            
+        case 'ارسال هزینه':
+            amounts.cost_sent = amount;
+            break;
+            
+        case 'واخواهی هزینه':
+            amounts.cost_recalled = amount;
+            break;
+            
+        case 'عودت مبلغ دریافتی':
+            amounts.paid = amount;
+            amounts.balance -= amount;
+            break;
+    }
+    
+    // اطمینان از عدم منفی شدن فاکتور نزد فروشنده
+    if (amounts.vendor_invoice < 0) {
+        amounts.vendor_invoice = 0;
+    }
+    
+    return amounts;
+}
+
+// دانلود فایل ضمیمه
+async function downloadAttachment(transactionId) {
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/transactions/attachment/${transactionId}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        if (response.ok) {
+            // ایجاد لینک دانلود
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = `attachment-${transactionId}`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } else {
+            alert('خطا در دانلود فایل ضمیمه');
+        }
+    } catch (error) {
+        console.error('Error downloading attachment:', error);
+        alert('خطا در دانلود فایل ضمیمه');
+    }
 }
 
 // بررسی آیا باید مانده اولیه اضافه شود
@@ -768,48 +1002,7 @@ function getFiscalYearStartDate() {
     return startDateMatch ? startDateMatch[1] : '1403/01/01';
 }
 
-// محاسبه مقادیر مالی بر اساس نوع تراکنش
-function calculateTransactionAmounts(transaction, currentBalance) {
-    const amounts = {
-        received: 0,
-        paid: 0,
-        balance: currentBalance,
-        cost_received: 0,
-        cost_sent: 0,
-        cost_recalled: 0
-    };
-    
-    const amount = parseFloat(transaction.amount);
-    
-    switch(transaction.transaction_type) {
-        case 'دریافت وجه':
-            amounts.received = amount;
-            amounts.balance += amount;
-            break;
-        case 'پرداخت وجه بدون فاکتور':
-        case 'پرداخت وجه با فاکتور':
-            amounts.paid = amount;
-            amounts.balance -= amount;
-            break;
-        case 'دریافت هزینه':
-            amounts.cost_received = amount;
-            break;
-        case 'ارسال هزینه':
-            amounts.cost_sent = amount;
-            break;
-        case 'واخواهی هزینه':
-            amounts.cost_recalled = amount;
-            break;
-        case 'عودت مبلغ دریافتی':
-            amounts.paid = amount;
-            amounts.balance -= amount;
-            break;
-    }
-    
-    return amounts;
-}
-
-// محاسبه خلاصه مالی
+// محاسبه خلاصه مالی - تابع اصلاح شده
 function calculateFinancialSummary(transactions) {
     let totalReceived = 0;
     let totalPaid = 0;
@@ -817,30 +1010,47 @@ function calculateFinancialSummary(transactions) {
     let totalCostReceived = 0;
     let totalCostSent = 0;
     let totalCostRecalled = 0;
+    let totalVendorInvoice = 0;
     
     // اگر مانده اولیه وجود دارد، آن را اضافه کن
     if (currentLedgerData && shouldAddInitialBalance()) {
         totalReceived += parseFloat(currentLedgerData.initial_cash) || 0;
         totalCostReceived += parseFloat(currentLedgerData.initial_pending_cost) || 0;
+        totalVendorInvoice = parseFloat(currentLedgerData.initial_vendor_invoice) || 0;
         totalBalance = totalReceived - totalPaid;
     }
     
+    let runningVendorInvoice = totalVendorInvoice;
+    
     transactions.forEach(transaction => {
-        const amounts = calculateTransactionAmounts(transaction, 0);
+        const amounts = calculateTransactionAmounts(transaction, 0, runningVendorInvoice);
         totalReceived += amounts.received;
         totalPaid += amounts.paid;
         totalBalance = totalReceived - totalPaid;
         totalCostReceived += amounts.cost_received;
         totalCostSent += amounts.cost_sent;
         totalCostRecalled += amounts.cost_recalled;
+        runningVendorInvoice = amounts.vendor_invoice;
     });
     
-    document.getElementById('totalReceived').textContent = totalReceived.toLocaleString();
-    document.getElementById('totalPaid').textContent = totalPaid.toLocaleString();
-    document.getElementById('totalBalance').textContent = totalBalance.toLocaleString();
-    document.getElementById('totalCostReceived').textContent = totalCostReceived.toLocaleString();
-    document.getElementById('totalCostSent').textContent = totalCostSent.toLocaleString();
-    document.getElementById('totalCostRecalled').textContent = totalCostRecalled.toLocaleString();
+    totalVendorInvoice = runningVendorInvoice;
+    
+    // بررسی وجود المنت‌ها قبل از تنظیم مقدار
+    const totalReceivedElement = document.getElementById('totalReceived');
+    const totalPaidElement = document.getElementById('totalPaid');
+    const totalBalanceElement = document.getElementById('totalBalance');
+    const totalCostReceivedElement = document.getElementById('totalCostReceived');
+    const totalCostSentElement = document.getElementById('totalCostSent');
+    const totalCostRecalledElement = document.getElementById('totalCostRecalled');
+    const totalVendorInvoiceElement = document.getElementById('totalVendorInvoice');
+    
+    if (totalReceivedElement) totalReceivedElement.textContent = totalReceived.toLocaleString();
+    if (totalPaidElement) totalPaidElement.textContent = totalPaid.toLocaleString();
+    if (totalBalanceElement) totalBalanceElement.textContent = totalBalance.toLocaleString();
+    if (totalCostReceivedElement) totalCostReceivedElement.textContent = totalCostReceived.toLocaleString();
+    if (totalCostSentElement) totalCostSentElement.textContent = totalCostSent.toLocaleString();
+    if (totalCostRecalledElement) totalCostRecalledElement.textContent = totalCostRecalled.toLocaleString();
+    if (totalVendorInvoiceElement) totalVendorInvoiceElement.textContent = totalVendorInvoice.toLocaleString();
 }
 
 // ویرایش تراکنش
@@ -861,6 +1071,19 @@ async function editTransaction(transactionId) {
     // استفاده از تاریخ شمسی
     document.getElementById('editTransactionDate').value = transaction.transaction_date;
     
+    // نمایش اطلاعات ضمیمه اگر وجود دارد
+    const attachmentInfo = document.getElementById('editAttachmentInfo');
+    if (transaction.attachment_path) {
+        attachmentInfo.innerHTML = `
+            <div class="alert alert-info">
+                <i class="bi bi-paperclip"></i>
+                فایل ضمیمه موجود است. انتخاب فایل جدید جایگزین می‌شود.
+            </div>
+        `;
+    } else {
+        attachmentInfo.innerHTML = '';
+    }
+    
     modal.show();
 }
 
@@ -872,13 +1095,18 @@ async function updateTransaction() {
         return;
     }
     
-    const transactionData = {
-        transaction_date: document.getElementById('editTransactionDate').value, // تاریخ شمسی
-        transaction_type: document.getElementById('editTransactionType').value,
-        title: document.getElementById('editTransactionTitle').value,
-        amount: document.getElementById('editTransactionAmount').value,
-        description: document.getElementById('editTransactionDescription').value
-    };
+    const formData = new FormData();
+    formData.append('transaction_date', document.getElementById('editTransactionDate').value);
+    formData.append('transaction_type', document.getElementById('editTransactionType').value);
+    formData.append('title', document.getElementById('editTransactionTitle').value);
+    formData.append('amount', document.getElementById('editTransactionAmount').value);
+    formData.append('description', document.getElementById('editTransactionDescription').value);
+    
+    // اضافه کردن فایل ضمیمه جدید اگر وجود دارد
+    const attachmentFile = document.getElementById('editTransactionAttachment').files[0];
+    if (attachmentFile) {
+        formData.append('attachment', attachmentFile);
+    }
     
     const transactionId = document.getElementById('editTransactionId').value;
     
@@ -887,10 +1115,9 @@ async function updateTransaction() {
         const response = await fetch(`/api/transactions/${transactionId}`, {
             method: 'PUT',
             headers: {
-                'Content-Type': 'application/json',
                 'Authorization': `Bearer ${token}`
             },
-            body: JSON.stringify(transactionData)
+            body: formData
         });
         
         const result = await response.json();
