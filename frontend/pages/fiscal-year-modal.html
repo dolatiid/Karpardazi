@@ -1,0 +1,89 @@
+<!-- مودال افزودن سال مالی -->
+<div class="modal fade" id="addFiscalYearModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">افزودن سال مالی جدید</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addFiscalYearForm">
+                    <input type="hidden" id="fiscalYearLedgerId">
+                    <div class="mb-3">
+                        <label for="fiscalYearTitle" class="form-label">عنوان سال مالی</label>
+                        <input type="text" class="form-control" id="fiscalYearTitle" 
+                               placeholder="مثال: ۱۴۰۳-۱۴۰۴" required>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="startDate" class="form-label">تاریخ شروع</label>
+                                <input type="date" class="form-control" id="startDate" required>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label for="endDate" class="form-label">تاریخ پایان</label>
+                                <input type="date" class="form-control" id="endDate" required>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3 form-check">
+                        <input type="checkbox" class="form-check-input" id="isActive" checked>
+                        <label class="form-check-label" for="isActive">سال مالی فعال</label>
+                    </div>
+                    <div class="alert alert-info">
+                        <small>
+                            <i class="bi bi-info-circle"></i>
+                            سال مالی جدید به دفتر "<span id="currentLedgerName"></span>" اختصاص داده می‌شود
+                        </small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="createFiscalYear()">ذخیره سال مالی</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- مودال مدیریت سال‌های مالی -->
+<div class="modal fade" id="manageFiscalYearsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">مدیریت سال‌های مالی</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h6>سال‌های مالی دفتر: <span id="manageLedgerName"></span></h6>
+                    <button class="btn btn-sm btn-success" onclick="showAddFiscalYearModal()">
+                        <i class="bi bi-plus-circle"></i> افزودن سال مالی
+                    </button>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>سال مالی</th>
+                                <th>تاریخ شروع</th>
+                                <th>تاریخ پایان</th>
+                                <th>وضعیت</th>
+                                <th>تعداد تراکنش‌ها</th>
+                                <th>عملیات</th>
+                            </tr>
+                        </thead>
+                        <tbody id="fiscalYearsManagementTable">
+                            <!-- لیست سال‌های مالی -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">بستن</button>
+            </div>
+        </div>
+    </div>
+</div>
