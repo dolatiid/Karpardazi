@@ -27,10 +27,15 @@ router.post('/', async (req, res) => {
         const { title, initial_debt, initial_cash, initial_pending_cost, initial_vendor_invoice } = req.body;
         const userId = 1; // برای تست
         
+        console.log('دریافت داده‌های ایجاد دفتر:', {
+            title, initial_debt, initial_cash, initial_pending_cost, initial_vendor_invoice
+        });
+        
         // بررسی جمع مقادیر اولیه
         const total = parseFloat(initial_cash) + parseFloat(initial_pending_cost) + parseFloat(initial_vendor_invoice);
-        if (total !== parseFloat(initial_debt)) {
+        if (Math.abs(total - parseFloat(initial_debt)) > 0.01) {
             return res.status(400).json({ 
+                success: false,
                 error: 'جمع موجودی نقد، هزینه ارسال نشده و فاکتور نزد فروشنده باید برابر با مانده بدهی باشد' 
             });
         }
@@ -48,7 +53,10 @@ router.post('/', async (req, res) => {
         });
     } catch (error) {
         console.error('Error creating ledger:', error);
-        res.status(500).json({ error: 'خطا در ایجاد دفتر' });
+        res.status(500).json({ 
+            success: false,
+            error: 'خطا در ایجاد دفتر' 
+        });
     }
 });
 
@@ -150,7 +158,9 @@ router.put('/:id', async (req, res) => {
         const { title, initial_debt, initial_cash, initial_pending_cost, initial_vendor_invoice } = req.body;
         const userId = 1; // برای تست
 
-        console.log('ویرایش دفتر:', { id, title });
+        console.log('ویرایش دفتر:', { 
+            id, title, initial_debt, initial_cash, initial_pending_cost, initial_vendor_invoice 
+        });
 
         // بررسی وجود دفتر
         const [ledgers] = await db.execute(
@@ -167,7 +177,7 @@ router.put('/:id', async (req, res) => {
 
         // بررسی جمع مقادیر اولیه
         const total = parseFloat(initial_cash) + parseFloat(initial_pending_cost) + parseFloat(initial_vendor_invoice);
-        if (total !== parseFloat(initial_debt)) {
+        if (Math.abs(total - parseFloat(initial_debt)) > 0.01) {
             return res.status(400).json({ 
                 success: false,
                 error: 'جمع موجودی نقد، هزینه ارسال نشده و فاکتور نزد فروشنده باید برابر با مانده بدهی باشد' 

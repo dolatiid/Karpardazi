@@ -103,3 +103,30 @@
     border-color: #bee5eb;
     color: #0c5460;
 }
+/* استایل برای ردیف‌های نامعتبر */
+.table-danger {
+    background-color: #f8d7da !important;
+}
+
+/* استایل برای input های مبلغ */
+.currency-input {
+    text-align: left;
+    direction: ltr;
+}
+
+/* استایل برای وضعیت‌ها */
+.status-valid {
+    color: #198754;
+    font-weight: bold;
+}
+
+.status-invalid {
+    color: #dc3545;
+    font-weight: bold;
+}
+
+/* استایل برای توضیح وضعیت */
+.status-tooltip {
+    cursor: help;
+    border-bottom: 1px dotted #666;
+}

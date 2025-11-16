@@ -9,13 +9,211 @@ let currentLedgerData = null;
 document.addEventListener('DOMContentLoaded', function() {
     checkAuth();
     loadLedgers();
-    setupEventListeners();
     
-    // مقداردهی datepicker ها بعد از بارگذاری کامل صفحه
     setTimeout(() => {
         initializePersianDatePickers();
     }, 100);
 });
+
+// فرمت کردن مبالغ به صورت سه‌رقمی
+function formatCurrency(amount) {
+    if (!amount && amount !== 0) return '';
+    const number = parseFloat(amount);
+    if (isNaN(number)) return '';
+    return new Intl.NumberFormat('fa-IR').format(number);
+}
+
+// تبدیل به عدد
+function parseCurrency(formattedValue) {
+    if (!formattedValue) return 0;
+    // حذف تمام جداکننده‌ها
+    const cleanValue = formattedValue.toString().replace(/,/g, '');
+    return parseFloat(cleanValue) || 0;
+}
+
+// تنظیم input های مبلغ
+function setupCurrencyInputs() {
+    const amountInputs = [
+        'transactionAmount', 'editTransactionAmount',
+        'initialDebt', 'initialCash', 'initialPendingCost', 'initialVendorInvoice',
+        'editInitialDebt', 'editInitialCash', 'editInitialPendingCost', 'editInitialVendorInvoice'
+    ];
+    
+    amountInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            // هنگام تایپ - فقط اعداد و نقطه مجاز
+            input.addEventListener('input', function(e) {
+                let value = this.value;
+                value = value.replace(/[^\d.]/g, '');
+                const parts = value.split('.');
+                if (parts.length > 2) {
+                    value = parts[0] + '.' + parts.slice(1).join('');
+                }
+                this.value = value;
+            });
+            
+            // هنگام خروج از فوکوس - فرمت کن
+            input.addEventListener('blur', function() {
+                if (this.value) {
+                    const parsed = parseCurrency(this.value);
+                    if (!isNaN(parsed)) {
+                        this.value = formatCurrency(parsed);
+                    }
+                }
+            });
+            
+            // هنگام فوکوس - حذف فرمت
+            input.addEventListener('focus', function() {
+                if (this.value) {
+                    const parsed = parseCurrency(this.value);
+                    if (!isNaN(parsed)) {
+                        this.value = parsed.toString();
+                    }
+                }
+            });
+        }
+    });
+}
+
+// نمایش مودال ویرایش دفتر
+function showEditLedgerModal(ledgerId, event) {
+    event.stopPropagation();
+    
+    const ledger = currentLedgerData;
+    if (!ledger) return;
+
+    // پر کردن فرم - نمایش مقادیر خام
+    document.getElementById('editLedgerId').value = ledger.id;
+    document.getElementById('editLedgerTitle').value = ledger.title;
+    document.getElementById('editInitialDebt').value = ledger.initial_debt;
+    document.getElementById('editInitialCash').value = ledger.initial_cash;
+    document.getElementById('editInitialPendingCost').value = ledger.initial_pending_cost;
+    document.getElementById('editInitialVendorInvoice').value = ledger.initial_vendor_invoice;
+
+    const modal = new bootstrap.Modal(document.getElementById('editLedgerModal'));
+    modal.show();
+}
+
+// بروزرسانی دفتر
+async function updateLedger() {
+    if (!validateEditDebtDistribution()) {
+        alert('جمع موجودی نقد، هزینه ارسال نشده و فاکتور نزد فروشنده باید برابر با مانده بدهی باشد');
+        return;
+    }
+    
+    const ledgerData = {
+        title: document.getElementById('editLedgerTitle').value,
+        initial_debt: parseCurrency(document.getElementById('editInitialDebt').value),
+        initial_cash: parseCurrency(document.getElementById('editInitialCash').value),
+        initial_pending_cost: parseCurrency(document.getElementById('editInitialPendingCost').value),
+        initial_vendor_invoice: parseCurrency(document.getElementById('editInitialVendorInvoice').value)
+    };
+    
+    const ledgerId = document.getElementById('editLedgerId').value;
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/ledgers/${ledgerId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(ledgerData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('دفتر با موفقیت ویرایش شد');
+            bootstrap.Modal.getInstance(document.getElementById('editLedgerModal')).hide();
+            loadLedgers();
+        } else {
+            alert('خطا: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error updating ledger:', error);
+        alert('خطا در ویرایش دفتر');
+    }
+}
+
+// بررسی توزیع مانده بدهی برای ویرایش
+function validateEditDebtDistribution() {
+    const debt = parseCurrency(document.getElementById('editInitialDebt').value) || 0;
+    const cash = parseCurrency(document.getElementById('editInitialCash').value) || 0;
+    const pendingCost = parseCurrency(document.getElementById('editInitialPendingCost').value) || 0;
+    const vendorInvoice = parseCurrency(document.getElementById('editInitialVendorInvoice').value) || 0;
+    
+    const total = cash + pendingCost + vendorInvoice;
+    const isValid = Math.abs(total - debt) < 0.01;
+    
+    const saveBtn = document.querySelector('#editLedgerModal .btn-primary');
+    if (saveBtn) {
+        saveBtn.disabled = !isValid;
+    }
+    
+    return isValid;
+}
+
+// ایجاد دفتر جدید
+async function createLedger() {
+    if (!validateDebtDistribution()) {
+        alert('جمع موجودی نقد، هزینه ارسال نشده و فاکتور نزد فروشنده باید برابر با مانده بدهی باشد');
+        return;
+    }
+    
+    const ledgerData = {
+        title: document.getElementById('ledgerTitle').value,
+        initial_debt: parseCurrency(document.getElementById('initialDebt').value),
+        initial_cash: parseCurrency(document.getElementById('initialCash').value),
+        initial_pending_cost: parseCurrency(document.getElementById('initialPendingCost').value),
+        initial_vendor_invoice: parseCurrency(document.getElementById('initialVendorInvoice').value)
+    };
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('/api/ledgers', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(ledgerData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('دفتر با موفقیت ایجاد شد');
+            bootstrap.Modal.getInstance(document.getElementById('addLedgerModal')).hide();
+            loadLedgers();
+        } else {
+            alert('خطا: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error creating ledger:', error);
+        alert('خطا در ایجاد دفتر');
+    }
+}
+
+// بررسی توزیع مانده بدهی
+function validateDebtDistribution() {
+    const debt = parseCurrency(document.getElementById('initialDebt').value) || 0;
+    const cash = parseCurrency(document.getElementById('initialCash').value) || 0;
+    const pendingCost = parseCurrency(document.getElementById('initialPendingCost').value) || 0;
+    const vendorInvoice = parseCurrency(document.getElementById('initialVendorInvoice').value) || 0;
+    
+    const total = cash + pendingCost + vendorInvoice;
+    const isValid = Math.abs(total - debt) < 0.01;
+    
+    const saveBtn = document.querySelector('#addLedgerModal .btn-primary');
+    if (saveBtn) {
+        saveBtn.disabled = !isValid;
+    }
+    
+    return isValid;
+}
 
 // مقداردهی اولیه datepicker های فارسی
 function initializePersianDatePickers() {
@@ -159,9 +357,12 @@ function renderLedgersList(ledgers) {
                 <div class="flex-grow-1">
                     <strong>${ledger.title}</strong>
                     <br>
-                    <small class="text-muted">مانده: ${parseFloat(ledger.initial_debt).toLocaleString()} ریال</small>
+                    <small class="text-muted">مانده: ${formatCurrency(ledger.initial_debt)} ریال</small>
                 </div>
                 <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-warning btn-sm" onclick="showEditLedgerModal(${ledger.id}, event)">
+                        <i class="bi bi-pencil"></i>
+                    </button>
                     <button class="btn btn-outline-danger btn-sm" onclick="deleteLedger(${ledger.id}, event)">
                         <i class="bi bi-trash"></i>
                     </button>
@@ -234,6 +435,98 @@ async function deleteLedger(ledgerId, event) {
     }
 }
 
+// نمایش مودال ویرایش دفتر
+function showEditLedgerModal(ledgerId, event) {
+    event.stopPropagation();
+    
+    const ledger = currentLedgerData;
+    if (!ledger) return;
+
+    // پر کردن فرم با داده‌های فعلی (بدون فرمت برای ویرایش)
+    document.getElementById('editLedgerId').value = ledger.id;
+    document.getElementById('editLedgerTitle').value = ledger.title;
+    document.getElementById('editInitialDebt').value = parseFloat(ledger.initial_debt);
+    document.getElementById('editInitialCash').value = parseFloat(ledger.initial_cash);
+    document.getElementById('editInitialPendingCost').value = parseFloat(ledger.initial_pending_cost);
+    document.getElementById('editInitialVendorInvoice').value = parseFloat(ledger.initial_vendor_invoice);
+
+    // نمایش مودال
+    const modal = new bootstrap.Modal(document.getElementById('editLedgerModal'));
+    modal.show();
+}
+
+// بروزرسانی دفتر
+async function updateLedger() {
+    if (!validateEditDebtDistribution()) {
+        alert('جمع موجودی نقد، هزینه ارسال نشده و فاکتور نزد فروشنده باید برابر با مانده بدهی باشد');
+        return;
+    }
+    
+    const ledgerData = {
+        title: document.getElementById('editLedgerTitle').value,
+        initial_debt: parseFloat(document.getElementById('editInitialDebt').value),
+        initial_cash: parseFloat(document.getElementById('editInitialCash').value),
+        initial_pending_cost: parseFloat(document.getElementById('editInitialPendingCost').value),
+        initial_vendor_invoice: parseFloat(document.getElementById('editInitialVendorInvoice').value)
+    };
+    
+    const ledgerId = document.getElementById('editLedgerId').value;
+    
+    try {
+        const token = localStorage.getItem('token');
+        const response = await fetch(`/api/ledgers/${ledgerId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify(ledgerData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            alert('دفتر با موفقیت ویرایش شد');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('editLedgerModal'));
+            modal.hide();
+            loadLedgers(); // بارگذاری مجدد لیست دفاتر
+            
+            // بروزرسانی داده‌های جاری
+            if (currentLedgerId === parseInt(ledgerId)) {
+                currentLedgerData = { ...currentLedgerData, ...ledgerData };
+            }
+        } else {
+            alert('خطا: ' + result.error);
+        }
+    } catch (error) {
+        console.error('Error updating ledger:', error);
+        alert('خطا در ویرایش دفتر');
+    }
+}
+
+// بررسی صحت توزیع مانده بدهی برای ویرایش
+function validateEditDebtDistribution() {
+    const debt = parseFloat(document.getElementById('editInitialDebt').value) || 0;
+    const cash = parseFloat(document.getElementById('editInitialCash').value) || 0;
+    const pendingCost = parseFloat(document.getElementById('editInitialPendingCost').value) || 0;
+    const vendorInvoice = parseFloat(document.getElementById('editInitialVendorInvoice').value) || 0;
+    
+    const total = cash + pendingCost + vendorInvoice;
+    const isValid = Math.abs(total - debt) < 0.01;
+    
+    const saveBtn = document.querySelector('#editLedgerModal .btn-primary');
+    if (saveBtn) {
+        saveBtn.disabled = !isValid;
+        if (!isValid) {
+            saveBtn.title = 'جمع موارد باید برابر با مانده بدهی باشد';
+        } else {
+            saveBtn.title = '';
+        }
+    }
+    
+    return isValid;
+}
+
 // بارگذاری سال‌های مالی
 async function loadFiscalYears(ledgerId) {
     try {
@@ -296,6 +589,15 @@ function setupEventListeners() {
     debtInputs.forEach(id => {
         document.getElementById(id)?.addEventListener('input', validateDebtDistribution);
     });
+
+    // بررسی جمع مقادیر دفتر برای ویرایش
+    const editDebtInputs = ['editInitialCash', 'editInitialPendingCost', 'editInitialVendorInvoice'];
+    editDebtInputs.forEach(id => {
+        document.getElementById(id)?.addEventListener('input', validateEditDebtDistribution);
+    });
+
+    // تنظیم input های مبلغ برای تراکنش‌ها
+    setupTransactionCurrencyInputs();
 }
 
 // بررسی صحت توزیع مانده بدهی
@@ -321,6 +623,68 @@ function validateDebtDistribution() {
     return isValid;
 }
 
+// فرمت کردن مبالغ به صورت سه‌رقمی
+function formatCurrency(amount) {
+    if (!amount && amount !== 0) return '';
+    const number = parseFloat(amount);
+    if (isNaN(number)) return '';
+    return number.toLocaleString('fa-IR');
+}
+
+// تبدیل فرمت به عدد
+function parseCurrency(formattedValue) {
+    if (!formattedValue) return 0;
+    // حذف تمام کاراکترهای غیرعددی به جز نقطه
+    const cleanValue = formattedValue.toString().replace(/[^\d.]/g, '');
+    return parseFloat(cleanValue) || 0;
+}
+
+// اعمال فرمت روی input مبالغ تراکنش‌ها
+function setupTransactionCurrencyInputs() {
+    const transactionAmountInputs = [
+        'transactionAmount', 
+        'editTransactionAmount'
+    ];
+    
+    transactionAmountInputs.forEach(id => {
+        const input = document.getElementById(id);
+        if (input) {
+            // هنگام تایپ کردن، فقط اعداد و نقطه مجاز
+            input.addEventListener('input', function(e) {
+                let value = this.value;
+                // حذف تمام کاراکترهای غیرعددی به جز نقطه
+                value = value.replace(/[^\d.]/g, '');
+                // فقط یک نقطه مجاز است
+                const parts = value.split('.');
+                if (parts.length > 2) {
+                    value = parts[0] + '.' + parts.slice(1).join('');
+                }
+                this.value = value;
+            });
+            
+            // هنگام خروج از focus فرمت کن
+            input.addEventListener('blur', function() {
+                if (this.value) {
+                    const parsedValue = parseCurrency(this.value);
+                    if (!isNaN(parsedValue) && parsedValue > 0) {
+                        this.value = formatCurrency(parsedValue);
+                    }
+                }
+            });
+            
+            // هنگام focus حذف فرمت
+            input.addEventListener('focus', function() {
+                if (this.value) {
+                    const parsedValue = parseCurrency(this.value);
+                    if (!isNaN(parsedValue)) {
+                        this.value = parsedValue.toString();
+                    }
+                }
+            });
+        }
+    });
+}
+
 // نمایش مودال افزودن دفتر
 function showAddLedgerModal() {
     const modalElement = document.getElementById('addLedgerModal');
@@ -338,10 +702,10 @@ async function createLedger() {
     
     const ledgerData = {
         title: document.getElementById('ledgerTitle').value,
-        initial_debt: document.getElementById('initialDebt').value,
-        initial_cash: document.getElementById('initialCash').value,
-        initial_pending_cost: document.getElementById('initialPendingCost').value,
-        initial_vendor_invoice: document.getElementById('initialVendorInvoice').value
+        initial_debt: parseFloat(document.getElementById('initialDebt').value),
+        initial_cash: parseFloat(document.getElementById('initialCash').value),
+        initial_pending_cost: parseFloat(document.getElementById('initialPendingCost').value),
+        initial_vendor_invoice: parseFloat(document.getElementById('initialVendorInvoice').value)
     };
     
     try {
@@ -709,12 +1073,18 @@ async function createTransaction() {
         return;
     }
     
+    const amountValue = parseCurrency(document.getElementById('transactionAmount').value);
+    if (!amountValue || amountValue <= 0) {
+        alert('لطفاً مبلغ معتبر وارد کنید');
+        return;
+    }
+    
     const formData = new FormData();
     formData.append('fiscal_year_id', document.getElementById('transactionFiscalYearId').value);
     formData.append('transaction_date', document.getElementById('transactionDate').value);
     formData.append('transaction_type', document.getElementById('transactionType').value);
     formData.append('title', document.getElementById('transactionTitle').value);
-    formData.append('amount', document.getElementById('transactionAmount').value);
+    formData.append('amount', amountValue.toString());
     formData.append('description', document.getElementById('transactionDescription').value);
     
     // اضافه کردن فایل ضمیمه اگر وجود دارد
@@ -728,7 +1098,7 @@ async function createTransaction() {
         transaction_date: document.getElementById('transactionDate').value,
         transaction_type: document.getElementById('transactionType').value,
         title: document.getElementById('transactionTitle').value,
-        amount: document.getElementById('transactionAmount').value
+        amount: amountValue
     });
     
     try {
@@ -737,7 +1107,6 @@ async function createTransaction() {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${token}`
-                //注意:不要设置Content-Type，让浏览器自动设置multipart/form-data
             },
             body: formData
         });
@@ -770,113 +1139,8 @@ async function createTransaction() {
     }
 }
 
-// بارگذاری تراکنش‌ها
-async function loadTransactions(fiscalYearId) {
-    try {
-        console.log('📥 درخواست تراکنش‌های سال مالی:', fiscalYearId);
-        const response = await fetch(`/api/transactions/${fiscalYearId}`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
-        
-        const transactions = await response.json();
-        console.log('✅ تراکنش‌های دریافت شده:', transactions);
-        
-        allTransactions = transactions;
-        renderTransactionsTable(transactions);
-        calculateFinancialSummary(transactions);
-    } catch (error) {
-        console.error('❌ Error loading transactions:', error);
-        alert('خطا در بارگذاری تراکنش‌ها: ' + error.message);
-    }
-}
-
-// رندر جدول تراکنش‌ها
-function renderTransactionsTable(transactions) {
-    const tbody = document.getElementById('transactionsTable');
-    tbody.innerHTML = '';
-    
-    // مرتب‌سازی تراکنش‌ها بر اساس تاریخ (صعودی)
-    transactions.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
-    
-    let runningBalance = 0;
-    let runningVendorInvoice = 0;
-    let hasAddedInitialBalance = false;
-    
-    // اگر این کوچکترین سال مالی است و اطلاعات دفتر وجود دارد، مانده اولیه اضافه کن
-    if (currentLedgerData && shouldAddInitialBalance()) {
-        const initialBalanceRow = document.createElement('tr');
-        initialBalanceRow.className = 'initial-balance-row';
-        
-        // مقادیر اولیه از دفتر
-        const initialCash = parseFloat(currentLedgerData.initial_cash) || 0;
-        const initialPendingCost = parseFloat(currentLedgerData.initial_pending_cost) || 0;
-        const initialVendorInvoice = parseFloat(currentLedgerData.initial_vendor_invoice) || 0;
-        
-        runningBalance += initialCash;
-        runningVendorInvoice = initialVendorInvoice;
-        
-        initialBalanceRow.innerHTML = `
-            <td>${getFiscalYearStartDate()}</td>
-            <td><strong>مانده اولیه</strong></td>
-            <td><strong>موجودی نقد و هزینه ارسال نشده اولیه</strong></td>
-            <td><strong>${initialCash.toLocaleString()}</strong></td>
-            <td></td>
-            <td><strong>${runningBalance.toLocaleString()}</strong></td>
-            <td><strong>${initialPendingCost.toLocaleString()}</strong></td>
-            <td></td>
-            <td></td>
-            <td><strong>${initialVendorInvoice.toLocaleString()}</strong></td>
-            <td></td>
-        `;
-        tbody.appendChild(initialBalanceRow);
-        hasAddedInitialBalance = true;
-    }
-    
-    // نمایش تراکنش‌ها
-    transactions.forEach(transaction => {
-        const row = document.createElement('tr');
-        
-        // محاسبه مقادیر برای هر ستون بر اساس نوع تراکنش
-        const amounts = calculateTransactionAmounts(transaction, runningBalance, runningVendorInvoice);
-        runningBalance = amounts.balance;
-        runningVendorInvoice = amounts.vendor_invoice;
-        
-        // ایجاد دکمه دانلود ضمیمه اگر وجود دارد
-        const attachmentButton = transaction.attachment_path ? 
-            `<button class="btn btn-sm btn-outline-info" onclick="downloadAttachment(${transaction.id})" title="دانلود ضمیمه">
-                <i class="bi bi-paperclip"></i>
-            </button>` : '';
-        
-        row.innerHTML = `
-            <td>${transaction.transaction_date}</td>
-            <td>${transaction.transaction_type}</td>
-            <td>${transaction.title}</td>
-            <td>${amounts.received ? amounts.received.toLocaleString() : ''}</td>
-            <td>${amounts.paid ? amounts.paid.toLocaleString() : ''}</td>
-            <td>${amounts.balance.toLocaleString()}</td>
-            <td>${amounts.cost_received ? amounts.cost_received.toLocaleString() : ''}</td>
-            <td>${amounts.cost_sent ? amounts.cost_sent.toLocaleString() : ''}</td>
-            <td>${amounts.cost_recalled ? amounts.cost_recalled.toLocaleString() : ''}</td>
-            <td>${amounts.vendor_invoice.toLocaleString()}</td>
-            <td>
-                ${attachmentButton}
-                <button class="btn btn-sm btn-warning" onclick="editTransaction(${transaction.id})">
-                    <i class="bi bi-pencil"></i>
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="deleteTransaction(${transaction.id})">
-                    <i class="bi bi-trash"></i>
-                </button>
-            </td>
-        `;
-        
-        tbody.appendChild(row);
-    });
-}
-
 // محاسبه مقادیر مالی بر اساس نوع تراکنش
-function calculateTransactionAmounts(transaction, currentBalance, currentVendorInvoice) {
+function calculateTransactionAmounts(transaction, currentBalance, currentVendorInvoice, currentCostSent) {
     const amounts = {
         received: 0,
         paid: 0,
@@ -884,7 +1148,8 @@ function calculateTransactionAmounts(transaction, currentBalance, currentVendorI
         cost_received: 0,
         cost_sent: 0,
         cost_recalled: 0,
-        vendor_invoice: currentVendorInvoice
+        vendor_invoice: currentVendorInvoice,
+        cost_sent_total: currentCostSent
     };
     
     const amount = parseFloat(transaction.amount);
@@ -898,26 +1163,27 @@ function calculateTransactionAmounts(transaction, currentBalance, currentVendorI
         case 'پرداخت وجه بدون فاکتور':
             amounts.paid = amount;
             amounts.balance -= amount;
-            amounts.vendor_invoice += amount; // افزایش فاکتور نزد فروشنده
+            amounts.vendor_invoice += amount;
             break;
             
         case 'پرداخت وجه با فاکتور':
             amounts.paid = amount;
             amounts.balance -= amount;
-            amounts.cost_received = amount; // دریافت هزینه
             break;
             
         case 'دریافت هزینه':
             amounts.cost_received = amount;
-            amounts.vendor_invoice -= amount; // کاهش فاکتور نزد فروشنده
+            amounts.vendor_invoice -= amount;
             break;
             
         case 'ارسال هزینه':
             amounts.cost_sent = amount;
+            amounts.cost_sent_total += amount;
             break;
             
         case 'واخواهی هزینه':
             amounts.cost_recalled = amount;
+            amounts.cost_sent_total -= amount;
             break;
             
         case 'عودت مبلغ دریافتی':
@@ -926,10 +1192,9 @@ function calculateTransactionAmounts(transaction, currentBalance, currentVendorI
             break;
     }
     
-    // اطمینان از عدم منفی شدن فاکتور نزد فروشنده
-    if (amounts.vendor_invoice < 0) {
-        amounts.vendor_invoice = 0;
-    }
+    // اطمینان از عدم منفی شدن مقادیر
+    if (amounts.vendor_invoice < 0) amounts.vendor_invoice = 0;
+    if (amounts.cost_sent_total < 0) amounts.cost_sent_total = 0;
     
     return amounts;
 }
@@ -1021,9 +1286,10 @@ function calculateFinancialSummary(transactions) {
     }
     
     let runningVendorInvoice = totalVendorInvoice;
+    let runningCostSent = 0;
     
     transactions.forEach(transaction => {
-        const amounts = calculateTransactionAmounts(transaction, 0, runningVendorInvoice);
+        const amounts = calculateTransactionAmounts(transaction, 0, runningVendorInvoice, runningCostSent);
         totalReceived += amounts.received;
         totalPaid += amounts.paid;
         totalBalance = totalReceived - totalPaid;
@@ -1031,6 +1297,7 @@ function calculateFinancialSummary(transactions) {
         totalCostSent += amounts.cost_sent;
         totalCostRecalled += amounts.cost_recalled;
         runningVendorInvoice = amounts.vendor_invoice;
+        runningCostSent = amounts.cost_sent_total;
     });
     
     totalVendorInvoice = runningVendorInvoice;
@@ -1044,13 +1311,13 @@ function calculateFinancialSummary(transactions) {
     const totalCostRecalledElement = document.getElementById('totalCostRecalled');
     const totalVendorInvoiceElement = document.getElementById('totalVendorInvoice');
     
-    if (totalReceivedElement) totalReceivedElement.textContent = totalReceived.toLocaleString();
-    if (totalPaidElement) totalPaidElement.textContent = totalPaid.toLocaleString();
-    if (totalBalanceElement) totalBalanceElement.textContent = totalBalance.toLocaleString();
-    if (totalCostReceivedElement) totalCostReceivedElement.textContent = totalCostReceived.toLocaleString();
-    if (totalCostSentElement) totalCostSentElement.textContent = totalCostSent.toLocaleString();
-    if (totalCostRecalledElement) totalCostRecalledElement.textContent = totalCostRecalled.toLocaleString();
-    if (totalVendorInvoiceElement) totalVendorInvoiceElement.textContent = totalVendorInvoice.toLocaleString();
+    if (totalReceivedElement) totalReceivedElement.textContent = formatCurrency(totalReceived);
+    if (totalPaidElement) totalPaidElement.textContent = formatCurrency(totalPaid);
+    if (totalBalanceElement) totalBalanceElement.textContent = formatCurrency(totalBalance);
+    if (totalCostReceivedElement) totalCostReceivedElement.textContent = formatCurrency(totalCostReceived);
+    if (totalCostSentElement) totalCostSentElement.textContent = formatCurrency(totalCostSent);
+    if (totalCostRecalledElement) totalCostRecalledElement.textContent = formatCurrency(totalCostRecalled);
+    if (totalVendorInvoiceElement) totalVendorInvoiceElement.textContent = formatCurrency(totalVendorInvoice);
 }
 
 // ویرایش تراکنش
@@ -1064,7 +1331,7 @@ async function editTransaction(transactionId) {
     // پر کردن فرم با داده‌های فعلی
     document.getElementById('editTransactionId').value = transaction.id;
     document.getElementById('editTransactionTitle').value = transaction.title;
-    document.getElementById('editTransactionAmount').value = transaction.amount;
+    document.getElementById('editTransactionAmount').value = parseFloat(transaction.amount);
     document.getElementById('editTransactionDescription').value = transaction.description || '';
     document.getElementById('editTransactionType').value = transaction.transaction_type;
     
@@ -1095,11 +1362,17 @@ async function updateTransaction() {
         return;
     }
     
+    const amountValue = parseCurrency(document.getElementById('editTransactionAmount').value);
+    if (!amountValue || amountValue <= 0) {
+        alert('لطفاً مبلغ معتبر وارد کنید');
+        return;
+    }
+    
     const formData = new FormData();
     formData.append('transaction_date', document.getElementById('editTransactionDate').value);
     formData.append('transaction_type', document.getElementById('editTransactionType').value);
     formData.append('title', document.getElementById('editTransactionTitle').value);
-    formData.append('amount', document.getElementById('editTransactionAmount').value);
+    formData.append('amount', amountValue.toString());
     formData.append('description', document.getElementById('editTransactionDescription').value);
     
     // اضافه کردن فایل ضمیمه جدید اگر وجود دارد
@@ -1165,5 +1438,150 @@ async function deleteTransaction(transactionId) {
     } catch (error) {
         console.error('Error deleting transaction:', error);
         alert('خطا در حذف تراکنش');
+    }
+}
+// بارگذاری تراکنش‌ها
+async function loadTransactions(fiscalYearId) {
+    try {
+        console.log('📥 درخواست تراکنش‌های سال مالی:', fiscalYearId);
+        const response = await fetch(`/api/transactions/${fiscalYearId}`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const transactions = await response.json();
+        console.log('✅ تراکنش‌های دریافت شده:', transactions);
+        
+        allTransactions = transactions;
+        renderTransactionsTable(transactions);
+        calculateFinancialSummary(transactions);
+    } catch (error) {
+        console.error('❌ Error loading transactions:', error);
+        alert('خطا در بارگذاری تراکنش‌ها: ' + error.message);
+    }
+}
+
+// رندر جدول تراکنش‌ها
+function renderTransactionsTable(transactions) {
+    const tbody = document.getElementById('transactionsTable');
+    tbody.innerHTML = '';
+    
+    // مرتب‌سازی تراکنش‌ها بر اساس تاریخ (صعودی) و سپس بر اساس ID
+    const sortedTransactions = [...transactions].sort((a, b) => {
+        // اول بر اساس تاریخ مقایسه کن
+        const dateCompare = comparePersianDates(a.transaction_date, b.transaction_date);
+        if (dateCompare !== 0) return dateCompare;
+        
+        // اگر تاریخ یکسان بود، بر اساس ID (ترتیب ثبت) مرتب کن
+        return a.id - b.id;
+    });
+    
+    let runningBalance = 0;
+    let runningVendorInvoice = 0;
+    let runningCostSent = 0;
+    let hasAddedInitialBalance = false;
+    
+    // اگر این کوچکترین سال مالی است و اطلاعات دفتر وجود دارد، مانده اولیه اضافه کن
+    if (currentLedgerData && shouldAddInitialBalance()) {
+        const initialCash = parseFloat(currentLedgerData.initial_cash) || 0;
+        const initialVendorInvoice = parseFloat(currentLedgerData.initial_vendor_invoice) || 0;
+        
+        runningBalance += initialCash;
+        runningVendorInvoice = initialVendorInvoice;
+        
+        const initialBalanceRow = document.createElement('tr');
+        initialBalanceRow.className = 'initial-balance-row';
+        initialBalanceRow.innerHTML = `
+            <td>${getFiscalYearStartDate()}</td>
+            <td><strong>مانده اولیه</strong></td>
+            <td><strong>موجودی نقد و هزینه ارسال نشده اولیه</strong></td>
+            <td><strong>${formatCurrency(initialCash)}</strong></td>
+            <td></td>
+            <td><strong>${formatCurrency(runningBalance)}</strong></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td><strong>${formatCurrency(initialVendorInvoice)}</strong></td>
+            <td><span class="badge bg-success">معتبر</span></td>
+            <td></td>
+        `;
+        tbody.appendChild(initialBalanceRow);
+        hasAddedInitialBalance = true;
+    }
+    
+    // نمایش تراکنش‌ها
+    sortedTransactions.forEach(transaction => {
+        const row = document.createElement('tr');
+        
+        // محاسبه مقادیر و وضعیت
+        const amounts = calculateTransactionAmounts(transaction, runningBalance, runningVendorInvoice, runningCostSent);
+        runningBalance = amounts.balance;
+        runningVendorInvoice = amounts.vendor_invoice;
+        runningCostSent = amounts.cost_sent_total;
+        
+        // تعیین وضعیت
+        const statusBadge = transaction.status === 'معتبر' ? 
+            '<span class="badge bg-success">معتبر</span>' : 
+            `<span class="badge bg-danger" title="${transaction.status_reason || 'نامعتبر'}">نامعتبر</span>`;
+        
+        // دکمه دانلود ضمیمه
+        const attachmentButton = transaction.attachment_path ? 
+            `<button class="btn btn-sm btn-outline-info" onclick="downloadAttachment(${transaction.id})" title="دانلود ضمیمه">
+                <i class="bi bi-paperclip"></i>
+            </button>` : '';
+        
+        row.innerHTML = `
+            <td>${transaction.transaction_date}</td>
+            <td>${transaction.transaction_type}</td>
+            <td>${transaction.title}</td>
+            <td>${amounts.received ? formatCurrency(amounts.received) : ''}</td>
+            <td>${amounts.paid ? formatCurrency(amounts.paid) : ''}</td>
+            <td>${formatCurrency(amounts.balance)}</td>
+            <td>${amounts.cost_received ? formatCurrency(amounts.cost_received) : ''}</td>
+            <td>${amounts.cost_sent ? formatCurrency(amounts.cost_sent) : ''}</td>
+            <td>${amounts.cost_recalled ? formatCurrency(amounts.cost_recalled) : ''}</td>
+            <td>${formatCurrency(amounts.vendor_invoice)}</td>
+            <td>${statusBadge}</td>
+            <td>
+                ${attachmentButton}
+                <button class="btn btn-sm btn-warning" onclick="editTransaction(${transaction.id})">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteTransaction(${transaction.id})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        
+        // رنگ‌آمیزی ردیف‌های نامعتبر
+        if (transaction.status === 'نامعتبر') {
+            row.classList.add('table-danger');
+        }
+        
+        tbody.appendChild(row);
+    });
+}
+
+// تابع مقایسه تاریخ‌های شمسی
+function comparePersianDates(date1, date2) {
+    try {
+        // تبدیل تاریخ‌ها به فرمت قابل مقایسه: YYYYMMDD
+        const convertToComparable = (dateStr) => {
+            const parts = dateStr.split('/');
+            if (parts.length !== 3) return 0;
+            const year = parseInt(parts[0]);
+            const month = parseInt(parts[1]);
+            const day = parseInt(parts[2]);
+            return year * 10000 + month * 100 + day;
+        };
+        
+        const date1Num = convertToComparable(date1);
+        const date2Num = convertToComparable(date2);
+        
+        return date1Num - date2Num;
+    } catch (error) {
+        console.error('Error comparing persian dates:', error);
+        return 0;
     }
 }

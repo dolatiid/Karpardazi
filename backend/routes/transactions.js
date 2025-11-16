@@ -121,27 +121,6 @@ router.post('/', upload.single('attachment'), async (req, res) => {
     }
 });
 
-// دریافت تراکنش‌های یک سال مالی
-router.get('/:fiscal_year_id', async (req, res) => {
-    try {
-        const { fiscal_year_id } = req.params;
-        
-        console.log('دریافت تراکنش‌های سال مالی:', fiscal_year_id);
-        
-        const [transactions] = await db.execute(
-            'SELECT * FROM transactions WHERE fiscal_year_id = ? ORDER BY transaction_date DESC, id DESC',
-            [fiscal_year_id]
-        );
-        
-        console.log('تعداد تراکنش‌های دریافت شده:', transactions.length);
-        
-        res.json(transactions);
-    } catch (error) {
-        console.error('Error fetching transactions:', error);
-        res.status(500).json({ error: 'خطا در دریافت تراکنش‌ها' });
-    }
-});
-
 // ویرایش تراکنش
 router.put('/:id', upload.single('attachment'), async (req, res) => {
     try {
@@ -304,6 +283,186 @@ router.get('/attachment/:id', async (req, res) => {
     } catch (error) {
         console.error('Error downloading attachment:', error);
         res.status(500).json({ error: 'خطا در دانلود فایل' });
+    }
+});
+// آپدیت تابع renderTransactionsTable
+function renderTransactionsTable(transactions) {
+    const tbody = document.getElementById('transactionsTable');
+    tbody.innerHTML = '';
+    
+    // مرتب‌سازی تراکنش‌ها
+    transactions.sort((a, b) => a.transaction_date.localeCompare(b.transaction_date));
+    
+    let runningBalance = 0;
+    let runningVendorInvoice = 0;
+    let runningCostSent = 0;
+    let hasAddedInitialBalance = false;
+    
+    // اضافه کردن مانده اولیه اگر لازم باشد
+    if (currentLedgerData && shouldAddInitialBalance()) {
+        const initialCash = parseFloat(currentLedgerData.initial_cash) || 0;
+        const initialVendorInvoice = parseFloat(currentLedgerData.initial_vendor_invoice) || 0;
+        
+        runningBalance += initialCash;
+        runningVendorInvoice = initialVendorInvoice;
+        
+        const initialBalanceRow = document.createElement('tr');
+        initialBalanceRow.className = 'initial-balance-row';
+        initialBalanceRow.innerHTML = `
+            <td>${getFiscalYearStartDate()}</td>
+            <td><strong>مانده اولیه</strong></td>
+            <td><strong>موجودی نقد و هزینه ارسال نشده اولیه</strong></td>
+            <td><strong>${formatCurrency(initialCash)}</strong></td>
+            <td></td>
+            <td><strong>${formatCurrency(runningBalance)}</strong></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td><strong>${formatCurrency(initialVendorInvoice)}</strong></td>
+            <td><span class="badge bg-success">معتبر</span></td>
+            <td></td>
+        `;
+        tbody.appendChild(initialBalanceRow);
+        hasAddedInitialBalance = true;
+    }
+    
+    // نمایش تراکنش‌ها
+    transactions.forEach(transaction => {
+        const row = document.createElement('tr');
+        
+        // محاسبه مقادیر و وضعیت
+        const amounts = calculateTransactionAmounts(transaction, runningBalance, runningVendorInvoice, runningCostSent);
+        runningBalance = amounts.balance;
+        runningVendorInvoice = amounts.vendor_invoice;
+        runningCostSent = amounts.cost_sent_total;
+        
+        // تعیین وضعیت
+        const statusBadge = transaction.status === 'معتبر' ? 
+            '<span class="badge bg-success">معتبر</span>' : 
+            `<span class="badge bg-danger" title="${transaction.status_reason || 'نامعتبر'}">نامعتبر</span>`;
+        
+        // دکمه دانلود ضمیمه
+        const attachmentButton = transaction.attachment_path ? 
+            `<button class="btn btn-sm btn-outline-info" onclick="downloadAttachment(${transaction.id})" title="دانلود ضمیمه">
+                <i class="bi bi-paperclip"></i>
+            </button>` : '';
+        
+        row.innerHTML = `
+            <td>${transaction.transaction_date}</td>
+            <td>${transaction.transaction_type}</td>
+            <td>${transaction.title}</td>
+            <td>${amounts.received ? formatCurrency(amounts.received) : ''}</td>
+            <td>${amounts.paid ? formatCurrency(amounts.paid) : ''}</td>
+            <td>${formatCurrency(amounts.balance)}</td>
+            <td>${amounts.cost_received ? formatCurrency(amounts.cost_received) : ''}</td>
+            <td>${amounts.cost_sent ? formatCurrency(amounts.cost_sent) : ''}</td>
+            <td>${amounts.cost_recalled ? formatCurrency(amounts.cost_recalled) : ''}</td>
+            <td>${formatCurrency(amounts.vendor_invoice)}</td>
+            <td>${statusBadge}</td>
+            <td>
+                ${attachmentButton}
+                <button class="btn btn-sm btn-warning" onclick="editTransaction(${transaction.id})">
+                    <i class="bi bi-pencil"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteTransaction(${transaction.id})">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        `;
+        
+        // رنگ‌آمیزی ردیف‌های نامعتبر
+        if (transaction.status === 'نامعتبر') {
+            row.classList.add('table-danger');
+        }
+        
+        tbody.appendChild(row);
+    });
+}
+
+// آپدیت تابع calculateTransactionAmounts برای محاسبه cost_sent_total
+function calculateTransactionAmounts(transaction, currentBalance, currentVendorInvoice, currentCostSent) {
+    const amounts = {
+        received: 0,
+        paid: 0,
+        balance: currentBalance,
+        cost_received: 0,
+        cost_sent: 0,
+        cost_recalled: 0,
+        vendor_invoice: currentVendorInvoice,
+        cost_sent_total: currentCostSent
+    };
+    
+    const amount = parseFloat(transaction.amount);
+    
+    switch(transaction.transaction_type) {
+        case 'دریافت وجه':
+            amounts.received = amount;
+            amounts.balance += amount;
+            break;
+            
+        case 'پرداخت وجه بدون فاکتور':
+            amounts.paid = amount;
+            amounts.balance -= amount;
+            amounts.vendor_invoice += amount;
+            break;
+            
+        case 'پرداخت وجه با فاکتور':
+            amounts.paid = amount;
+            amounts.balance -= amount;
+            break;
+            
+        case 'دریافت هزینه':
+            amounts.cost_received = amount;
+            amounts.vendor_invoice -= amount;
+            break;
+            
+        case 'ارسال هزینه':
+            amounts.cost_sent = amount;
+            amounts.cost_sent_total += amount;
+            break;
+            
+        case 'واخواهی هزینه':
+            amounts.cost_recalled = amount;
+            amounts.cost_sent_total -= amount;
+            break;
+            
+        case 'عودت مبلغ دریافتی':
+            amounts.paid = amount;
+            amounts.balance -= amount;
+            break;
+    }
+    
+    // اطمینان از عدم منفی شدن مقادیر
+    if (amounts.vendor_invoice < 0) amounts.vendor_invoice = 0;
+    if (amounts.cost_sent_total < 0) amounts.cost_sent_total = 0;
+    
+    return amounts;
+}
+// دریافت تراکنش‌های یک سال مالی
+router.get('/:fiscal_year_id', async (req, res) => {
+    try {
+        const { fiscal_year_id } = req.params;
+        
+        console.log('دریافت تراکنش‌های سال مالی:', fiscal_year_id);
+        
+        // مرتب‌سازی بر اساس تاریخ (صعودی) و سپس ID
+        const [transactions] = await db.execute(
+            `SELECT * FROM transactions 
+             WHERE fiscal_year_id = ? 
+             ORDER BY 
+                 SUBSTRING_INDEX(transaction_date, '/', 1) DESC,
+                 SUBSTRING_INDEX(SUBSTRING_INDEX(transaction_date, '/', 2), '/', -1) DESC,
+                 SUBSTRING_INDEX(transaction_date, '/', -1) DESC,
+                 id ASC`,
+            [fiscal_year_id]
+        );
+        
+        console.log('تعداد تراکنش‌های دریافت شده:', transactions.length);
+        
+        res.json(transactions);
+    } catch (error) {
+        console.error('Error fetching transactions:', error);
+        res.status(500).json({ error: 'خطا در دریافت تراکنش‌ها' });
     }
 });
 

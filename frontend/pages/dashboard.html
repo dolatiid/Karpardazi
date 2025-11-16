@@ -167,13 +167,13 @@
                         </div>
                         <div class="mb-3">
                             <label for="initialDebt" class="form-label">مانده بدهی اولیه</label>
-                            <input type="number" class="form-control" id="initialDebt" step="0.01" required>
+                            <input type="text" class="form-control" id="initialDebt"  required>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">تفکیک مانده بدهی:</label>
-                            <input type="number" class="form-control mb-2" id="initialCash" step="0.01" placeholder="موجودی نقد" required>
-                            <input type="number" class="form-control mb-2" id="initialPendingCost" step="0.01" placeholder="هزینه ارسال نشده اولیه" required>
-                            <input type="number" class="form-control" id="initialVendorInvoice" step="0.01" placeholder="فاکتور نزد فروشنده" required>
+                            <input type="text" class="form-control mb-2" id="initialCash"  placeholder="موجودی نقد" required>
+                            <input type="text" class="form-control mb-2" id="initialPendingCost"  placeholder="هزینه ارسال نشده اولیه" required>
+                            <input type="text" class="form-control" id="initialVendorInvoice"  placeholder="فاکتور نزد فروشنده" required>
                             <small class="text-muted">جمع موارد بالا باید برابر با مانده بدهی باشد</small>
                         </div>
                     </form>
@@ -371,7 +371,7 @@
                         </div>
                         <div class="mb-3">
                             <label for="transactionAmount" class="form-label">مبلغ (ریال) *</label>
-                            <input type="number" class="form-control" id="transactionAmount" step="0.01" required>
+                            <input type="text" class="form-control" id="transactionAmount"  required>
                         </div>
                         <div class="mb-3">
                             <label for="transactionDescription" class="form-label">توضیحات</label>
@@ -434,7 +434,7 @@
                         </div>
                         <div class="mb-3">
                             <label for="editTransactionAmount" class="form-label">مبلغ (ریال) *</label>
-                            <input type="number" class="form-control" id="editTransactionAmount" step="0.01" required>
+                            <input type="text" class="form-control" id="editTransactionAmount"  required>
                         </div>
                         <div class="mb-3">
                             <label for="editTransactionDescription" class="form-label">توضیحات</label>
@@ -459,6 +459,41 @@
         </div>
     </div>
 
+<!-- مودال ویرایش دفتر -->
+<div class="modal fade" id="editLedgerModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">ویرایش دفتر</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editLedgerForm">
+                    <input type="hidden" id="editLedgerId">
+                    <div class="mb-3">
+                        <label for="editLedgerTitle" class="form-label">عنوان دفتر</label>
+                        <input type="text" class="form-control" id="editLedgerTitle" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="editInitialDebt" class="form-label">مانده بدهی اولیه</label>
+                        <input type="text" class="form-control" id="editInitialDebt"  required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">تفکیک مانده بدهی:</label>
+                        <input type="text" class="form-control mb-2" id="editInitialCash"  placeholder="موجودی نقد" required>
+                        <input type="text" class="form-control mb-2" id="editInitialPendingCost"  placeholder="هزینه ارسال نشده اولیه" required>
+                        <input type="text" class="form-control" id="editInitialVendorInvoice"  placeholder="فاکتور نزد فروشنده" required>
+                        <small class="text-muted">جمع موارد بالا باید برابر با مانده بدهی باشد</small>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">انصراف</button>
+                <button type="button" class="btn btn-primary" onclick="updateLedger()">بروزرسانی دفتر</button>
+            </div>
+        </div>
+    </div>
+</div>
     <!-- کتابخانه‌های مورد نیاز -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/persian-date@1.1.0/dist/persian-date.min.js"></script>
